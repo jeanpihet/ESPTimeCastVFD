@@ -25,10 +25,6 @@
 display P = display(CLKB, RSTB, CSB, DIN);
 AsyncWebServer server(80);
 
-// --- Global Scroll Speed Settings (ms) ---
-const int GENERAL_SCROLL_SPEED = 250; // Default: Adjust this for Weather Description and Countdown Label (e.g., 50 for faster, 200 for slower)
-const int IP_SCROLL_SPEED = 333;      // Default: Adjust this for the IP Address display (slower for readability)
-
 // WiFi and configuration globals
 char ssid[32] = "";
 char password[64] = "";
@@ -139,9 +135,7 @@ static bool hourglassPlayed = false;
 // Weather Description Mode handling
 unsigned long descStartTime = 0;  // For static description
 bool descScrolling = false;
-const unsigned long descriptionDuration = 3000;    // 3s for short text
-static unsigned long descScrollEndTime = 0;        // for post-scroll delay (re-used for scroll timing)
-const unsigned long descriptionScrollPause = 300;  // 300ms pause after scroll
+const unsigned long descriptionScrollPause = 1500;  // 300ms pause after scroll
 
 // --- Safe WiFi credential getters ---
 const char *getSafeSsid() {
@@ -394,8 +388,10 @@ void connectWiFi() {
       pendingIpToShow = WiFi.localIP().toString();
       showingIp = true;
       ipDisplayCount = 0;  // Reset count for IP display
-      if (pendingIpToShow.length() > 6)
-        P.print(pendingIpToShow.c_str() + 6); // ToDo scroll, speed IP_SCROLL_SPEED
+      if (pendingIpToShow.length() > 0)
+        P.print(pendingIpToShow.c_str());
+      while (P.scroll())
+        yield();
       delay(2000);
       // --- END IP Display initiation ---
 
@@ -869,7 +865,7 @@ void setupWebServer() {
     // Handle "off" request
     if (newBrightness == -1) {
       //P.displayShutdown(true);  // Fully shut down display driver
-      P.print(' ');
+      P.print(" ");
       displayOff = true;
       Serial.println("[WEBSERVER] Display set to OFF (shutdown mode)");
       request->send(200, "application/json", "{\"ok\":true, \"display\":\"off\"}");
@@ -1216,12 +1212,14 @@ String normalizeWeatherDescription(String str) {
   str.replace("ź", "z");
   str.replace("ż", "z");
 
-  str.toUpperCase();
+  // All lower case except first letter
+  str.toLowerCase();
+  str[0] = toupper(str[0]);
 
   String result = "";
   for (unsigned int i = 0; i < str.length(); i++) {
     char c = str.charAt(i);
-    if ((c >= 'A' && c <= 'Z') || c == ' ') {
+    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == ' ') {
       result += c;
     }
   }
@@ -1685,7 +1683,7 @@ void loop() {
       if (!displayOff) {
         Serial.println(F("[DISPLAY] Turning display OFF (dimming -1)"));
         //P.displayShutdown(true);
-        P.print(' ');
+        P.print(" ");
         displayOff = true;
         displayOffByDimming = true;
         displayOffByBrightness = false;
@@ -1705,7 +1703,7 @@ void loop() {
       if (!displayOff) {
         Serial.println(F("[DISPLAY] Turning display OFF (brightness -1)"));
         //P.displayShutdown(true);
-        P.print(' ');
+        P.print(" ");
         displayOff = true;
         displayOffByBrightness = true;
         displayOffByDimming = false;
@@ -1738,21 +1736,22 @@ void loop() {
 
   // --- IP Display ---
   if (showingIp) {
-    if (ipDisplayCount <= ipDisplayMax /*P.displayAnimate()*/) {       // ToDo scroll
-      ipDisplayCount++;
-      if (ipDisplayCount < ipDisplayMax) {
-        if (pendingIpToShow.length() > 6)
-          P.print(pendingIpToShow.c_str() + 6); // ToDo scroll, speed 120
-        delay(1000);
+    if (pendingIpToShow.length()) {
+      if (P.scroll()) {
+        yield();
       } else {
         showingIp = false;
-        P.print(' ');
-        delay(500);  // Blocking delay as in working copy
+        if (pendingIpToShow.length() > 0)
+          delay(2000);  // Blocking delay as in working copy
+        P.print(" ");
         displayMode = 0;
         lastSwitch = millis();
       }
+    } else {
+      P.print(" ");
+      displayMode = 0;
+      lastSwitch = millis();
     }
-    yield();
     return;  // Exit loop early if showing IP
   }
 
@@ -1763,7 +1762,7 @@ void loop() {
     if (!displayOff) {
       Serial.println(F("[DISPLAY] Turning display OFF"));
       //P.displayShutdown(true);  // fully off
-      P.print(' ');
+      P.print(" ");
       displayOff = true;
     }
     yield();
@@ -1993,16 +1992,8 @@ void loop() {
 
       if (shouldScrollIn && !clockScrollDone) {
 #if 0
-        textEffect_t inDir = getEffectiveScrollDirection(PA_SCROLL_LEFT, flipDisplay);
-
-        P.displayText(
-          timeString.c_str(),
-          PA_CENTER,
-          GENERAL_SCROLL_SPEED,
-          0,
-          inDir,
-          PA_NO_EFFECT);
-        while (!P.displayAnimate()) yield();
+        P.print(timeString.c_str());
+        while (!P.scroll()) yield();
 #endif
         clockScrollDone = true;  // mark scroll done
       } else {
@@ -2064,39 +2055,29 @@ void loop() {
     static char descBuffer[128];  // large enough for OWM translations
     desc.toCharArray(descBuffer, sizeof(descBuffer));
 
-    if (0 /*desc.length() > P.DISP_MAX_LEN*/) {   // ToDo scroll
-      if (!descScrolling) {
-        P.print(descBuffer); // ToDo scroll GENERAL_SCROLL_SPEED
-        descScrolling = true;
-        descScrollEndTime = 0;  // reset end time at start
-      }
-      if (1 /*P.displayAnimate()*/) {         // ToDo scroll
-        if (descScrollEndTime == 0) {
-          descScrollEndTime = millis();  // mark the time when scroll finishes
-        }
-        // wait small pause after scroll stops
-        if (millis() - descScrollEndTime > descriptionScrollPause) {
-          descScrolling = false;
-          descScrollEndTime = 0;
-          advanceDisplayMode();
-        }
-      } else {
-        descScrollEndTime = 0;  // reset if not finished
-      }
-      yield();
-      return;
+    if (descStartTime == 0) {
+      P.print(descBuffer);
+      descStartTime = millis();
+      descScrolling = true;
     } else {
-      if (descStartTime == 0) {
-        P.print(descBuffer);
-        descStartTime = millis();
+      if (descScrolling && P.scroll()) {
+        yield();
+        return;
       }
-      if (millis() - descStartTime > descriptionDuration) {
+
+      // Scrolling done
+      if (descScrolling)
+        descStartTime = millis();
+      descScrolling = false;
+
+      // Wait after scrolling done
+      if (millis() - descStartTime > descriptionScrollPause) {
         descStartTime = 0;
         advanceDisplayMode();
       }
-      yield();
-      return;
     }
+    yield();
+    return;
   }
 
 
@@ -2146,7 +2127,7 @@ void loop() {
           }
         }
         Serial.println("[COUNTDOWN-FINISH] Played hourglass animation.");
-        P.print(' ');   // Clear display after hourglass animation
+        P.print(" ");   // Clear display after hourglass animation
 
         // 2. Initialize Flashing "TIMES UP" for its very first frame
         flashingMessageFrame = 0;
@@ -2164,11 +2145,11 @@ void loop() {
       if (millis() - countdownFinishedMessageStartTime < 15000) {  // Flashing duration
         if (millis() - lastFlashingSwitch >= 500) {                // Check for flashing interval
           lastFlashingSwitch = millis();
-          P.print(' ');
+          P.print(" ");
           P.print(flashFrames[flashingMessageFrame]);
           flashingMessageFrame = (flashingMessageFrame + 1) % 2;
         }
-        //P.displayAnimate();  // Ensure display updates      // ToDo scroll
+        P.scroll();  // Ensure display updates
         yield();
         return;  // Stay in this mode until the 15 seconds are over
       } else {
@@ -2206,7 +2187,7 @@ void loop() {
 
         if (segmentStartTime == 0 || (millis() - segmentStartTime > SEGMENT_DISPLAY_DURATION)) {
           segmentStartTime = millis();
-          P.print(' ');
+          P.print(" ");
 
           switch (countdownSegment) {
             case 0:  // Days
@@ -2249,7 +2230,7 @@ void loop() {
                 sprintf(secondsBuf, "%02ld %s", currentSecond, currentSecond == 1 ? "SEC" : "SECS");
                 String secondsText = String(secondsBuf);
                 Serial.printf("[COUNTDOWN-STATIC] Displaying segment 3: %s\n", secondsText.c_str());
-                P.print(' ');
+                P.print(" ");
                 P.print(secondsText.c_str());
                 delay(SEGMENT_DISPLAY_DURATION - 400);
 
@@ -2257,7 +2238,7 @@ void loop() {
                 long adjustedSecond = (countdownTargetTimestamp - segmentStartTime - (elapsed / 1000)) % 60;
                 sprintf(secondsBuf, "%02ld %s", adjustedSecond, adjustedSecond == 1 ? "SEC" : "SECS");
                 secondsText = String(secondsBuf);
-                P.print(' ');
+                P.print(" ");
                 P.print(secondsText.c_str());
                 delay(400);
 
@@ -2279,11 +2260,10 @@ void loop() {
                   label = fallbackLabels[randomIndex];
                 }
 
-                P.print(label.c_str());               // ToDo scroll GENERAL_SCROLL_SPEED
-
-                //while (1 /*!P.displayAnimate()*/) {   // ToDo scroll
-                //  yield();
-                //}
+                P.print(label.c_str());
+                while (P.scroll()) {
+                  yield();
+                }
                 countdownSegment++;
                 segmentStartTime = millis();
                 break;
@@ -2307,7 +2287,7 @@ void loop() {
             P.print(currentSegmentText.c_str());
           }
         }
-        //P.displayAnimate();       // ToDo scroll
+        P.scroll();
       }
 
       // --- NEW: SINGLE-LINE COUNTDOWN LOGIC ---
@@ -2344,12 +2324,11 @@ void loop() {
         String fullString = String(buf);
 
         // Display the full string and scroll it
-        P.print(fullString.c_str());      // ToDo scroll GENERAL_SCROLL_SPEED;
-
+        P.print(fullString.c_str());
         // Blocking loop to ensure the full message scrolls
-        //while (1 /*!P.displayAnimate()*/) {   // ToDo scroll
-        //  yield();
-        //}
+        while (P.scroll()) {
+          yield();
+        }
 
         // After scrolling is complete, we're done with this display mode
         // Move to the next mode and exit the function.

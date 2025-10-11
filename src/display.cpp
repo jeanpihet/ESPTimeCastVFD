@@ -1,3 +1,4 @@
+#include <Arduino.h>
 #include "display.h"
 
 display::display(unsigned int clkb, unsigned int rstb, unsigned int csb, unsigned int din)
@@ -62,47 +63,63 @@ void display::print_time_big(int hour, int min, bool on)
 
 // Print on the 2nd line, which has 12 (1..12) fully graphical digits.
 // Always print centered, excepted if the string is too long it will scroll R->L
-
-//  Print unique char
-void display::print(const char c)
-{
-    char l[16] = { 0x20 };
-
-    // The digits order is reversed (right to left) by the HW and PT6302 lib (???)
-    l[5] = c;
-    l[DISP_MAX_LEN] = 0;
-
-    vfd->print(1, l, false);
-}
-
-//  Print string
-//  ToDo: scrolling if string too long
+//
+// Call animate() to perform scrolling
 void display::print(std::string str)
 {
-    char l[DISP_MAX_LEN + 1];
-    int len, start;
-
-    memset(l, 0x20, sizeof(l));
-
     // Save string for later scrolling
     strncpy(print_str, str.c_str(), PRINT_MAX_LEN - 1);
     print_str[PRINT_MAX_LEN - 1] = 0;
+
+    last_scroll_millis = millis();
+    last_scroll_offset = 0;
+
+    scroll();
+}
+
+// Animate scrolling
+// Returns 0 when scrolling reaches the end
+int display::scroll(void)
+{
+    int len, to_copy, start, ret = 1;
+    char l[DISP_MAX_LEN + 1];
+    unsigned long ms = millis();
+
+    // Print the 1st time, then update after SCROLL_SPEED ms
+    if (last_scroll_offset > 0 && ms < last_scroll_millis + SCROLL_SPEED)
+        goto out;
+
+    memset(l, 0x20, sizeof(l));
     len = strlen(print_str);
 
     // Center string if too short
     if (len >= DISP_MAX_LEN) {
-        len = DISP_MAX_LEN;
         start = 0;
+        to_copy = DISP_MAX_LEN;
     } else {
         start = (DISP_MAX_LEN - len) / 2;
+        to_copy = len;
     }
 
     // The digits order is reversed (right to left) by the HW and PT6302 lib (???)
-    for (int i = 0; i < len; i++)
-        l[DISP_MAX_LEN - i - 1 - start] = print_str[i];
+    for (int i = 0; i < to_copy; i++) {
+        l[(int) DISP_MAX_LEN - i - 1 - start] = print_str[i + last_scroll_offset];
+    }
     l[DISP_MAX_LEN] = 0;
 
     vfd->print(1, l, false);
+
+    last_scroll_offset++;
+    last_scroll_millis = ms;
+
+    // Check if done scrolling
+    if (last_scroll_offset > len - (int) DISP_MAX_LEN) {
+        last_scroll_offset = 0;
+        ret = 0;
+    }
+
+out:
+    return ret;
 }
 
 

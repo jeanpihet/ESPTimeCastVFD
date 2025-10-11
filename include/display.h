@@ -33,12 +33,15 @@ public:
     void print_time_big(int hour, int min, bool on);
 
     // Print on the 2nd line, which has 12 fully graphical digits
-    void print(const char c);
     void print(std::string str);
     // Max display size on 2nd line
     static const size_t DISP_MAX_LEN = 12;
     //  max buffer size for scrolling
     static const size_t PRINT_MAX_LEN = 128;
+
+    // Animate scrolling
+    // Returns 0 when scrolling reaches the end
+    int scroll(void);
 
     // Red clock icon on/off
     void clock_icon(bool on);
@@ -78,6 +81,10 @@ private:
     // Print time on digits XX[.:]YY, 1st line.
     void print_digits(int xx, int yy, int start, int cgr_idx, bool on, bool dot_or_column);
 
+    // --- Global Scroll Speed Settings: time between scrolling of chars (ms) ---
+    const int SCROLL_SPEED = 333;
+    unsigned long last_scroll_millis;
+    int last_scroll_offset;
 };
 
 #endif
