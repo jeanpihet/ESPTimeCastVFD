@@ -3,44 +3,49 @@
 display::display(unsigned int clkb, unsigned int rstb, unsigned int csb, unsigned int din)
 {
     vfd = new PT6302((PT6302::Pin) clkb, (PT6302::Pin) rstb, (PT6302::Pin) csb, (PT6302::Pin) din);
+}
 
+void display::init()
+{
     vfd->init();
 
-    // Set the general purpose output pins. GP1 enables the -30V power supply to the vfd->
-    Serial.println("GPOP set");
+    // Set the general purpose output pins. GP1 enables the -30V power supply to the vfd
     vfd->setGPOP(true, false);
 
     // Set to normal operation mode
-    Serial.println("Mode set");
     vfd->setMode(PT6302::Mode::NORMAL);
 
     // Set the amount of digits
-    Serial.println("Digit set");
     vfd->setDigitNo(16);
 
-    // Set the amount of duty cycles
-    Serial.println("Duty set");
+    // Set the amount of duty cycles = brightness
     vfd->setDuty(15);
 
     // Clear the display after a reset otherwise it will show garbage
-    Serial.println("Clear");
     vfd->clear();
 
     // Print a string at a specific position
-    //Serial.println("Print at position");
     //vfd->print(3, "43", false);
+
+    Serial.println("VFD init done!");
 }
 
-// Print time on small digits, 1st line left
+// Set brightness 8..15
+void display::setIntensity(int brightness)
+{
+    vfd->setDuty(brightness);
+}
+
+// Print date on small digits, 1st line left
 // Segments are at position 15
 // Uses CGRAM char 0
 // Other segments are:
 //  'TITLE' : 20
 //  'CH' : 32
 //  'TRACK' : 15
-void display::print_time_small(int hour, int min, bool on)
+void display::print_date_small(int day, int month, bool on)
 {
-    print_time(hour, min, 15, 0, on, true);
+    print_digits(day, month, 15, 0, on, false);
 }
 
 // Print time on big digits, 1st line middle
@@ -51,26 +56,55 @@ void display::print_time_small(int hour, int min, bool on)
 //  'PM' : 34
 void display::print_time_big(int hour, int min, bool on)
 {
-    print_time(hour, min, 14, 1, on, false);
+    print_digits(hour, min, 14, 1, on, true);
 }
 
-// Print on the 2nd line, which has 12 (1..12) fully graphical digits.
-void display::print_2nd_line(const char *c, bool overwrite)
-{
-    char l[16];
-    int len = strlen(c);
 
-    memset(l, 0x20, 12);
-    if (len > 12)
-        len = 12;
+// Print on the 2nd line, which has 12 (1..12) fully graphical digits.
+// Always print centered, excepted if the string is too long it will scroll R->L
+
+//  Print unique char
+void display::print(const char c)
+{
+    char l[16] = { 0x20 };
+
+    // The digits order is reversed (right to left) by the HW and PT6302 lib (???)
+    l[5] = c;
+    l[DISP_MAX_LEN] = 0;
+
+    vfd->print(1, l, false);
+}
+
+//  Print string
+//  ToDo: scrolling if string too long
+void display::print(std::string str)
+{
+    char l[DISP_MAX_LEN + 1];
+    int len, start;
+
+    memset(l, 0x20, sizeof(l));
+
+    // Save string for later scrolling
+    strncpy(print_str, str.c_str(), PRINT_MAX_LEN - 1);
+    print_str[PRINT_MAX_LEN - 1] = 0;
+    len = strlen(print_str);
+
+    // Center string if too short
+    if (len >= DISP_MAX_LEN) {
+        len = DISP_MAX_LEN;
+        start = 0;
+    } else {
+        start = (DISP_MAX_LEN - len) / 2;
+    }
 
     // The digits order is reversed (right to left) by the HW and PT6302 lib (???)
     for (int i = 0; i < len; i++)
-        l[12 - i - 1] = c[i];
-    l[12] = 0;
+        l[DISP_MAX_LEN - i - 1 - start] = print_str[i];
+    l[DISP_MAX_LEN] = 0;
 
-    vfd->print(1, l, overwrite);
+    vfd->print(1, l, false);
 }
+
 
 // Red clock icon on/off
 // Segments are at position 13
@@ -104,10 +138,12 @@ void display::test_digits(int start)
     for (int i = 0; i < 5; i++) {
         CGdata[0] = CGdata[1] = CGdata[2] = CGdata[3] = CGdata[4] = 0;
         for (int j = 0; j < 7; j++) {
+            std::string str;
             vfd->writeDCRAM(start, 1);
             delay(100 * DELAY_MULT);
             sprintf(msg, "Seg %d    ", i * 7 + j);
-            print_2nd_line(msg, false);
+            str = msg;
+            print(str);
             // Only one segment
             CGdata[i] = 1 << j;
             sprintf(msg, "Seg %d (%d=%02x) ", i * 7 + j, i, CGdata[i]);
@@ -140,17 +176,24 @@ uint8_t display::to_7_seg(uint8_t num)
     return seg[num % 10];
 }
 
+// 1st line segments: "1XX:YY   1XX:YY"
+//
 // Segments a..g to VFD segment numbers. Order is MSB - g, f, e, d, c, b, a - LSB
+//
+//  1-2 digits 1XX:
+//      100 '1': segment 27
+//      10
+uint seg_10_xx[7] = { 13, 33, 12, 5, 19, 6, 26 };
+//      1
+uint seg_1_xx[7] = { 25, 11, 24, 17, 31, 18, 4 };
+//
 //  ':' : segments 3 (up), 10 (down)
-//  100 hour '1': segment 27
-//  10 hour
-uint seg_10_hour[7] = { 13, 33, 12, 5, 19, 6, 26 };
-//  1 hour
-uint seg_1_hour[7] = { 25, 11, 24, 17, 31, 18, 4 };
-//  10 min
-uint seg_10_min[7] = { 30, 16, 29, 22, 2, 23, 9 };
-// 1 min
-uint seg_1_min[7] = { 8, 28, 7, 0, 14, 1, 21 };
+//
+//  3-4 digits YY:
+//      10
+uint seg_10_yy[7] = { 30, 16, 29, 22, 2, 23, 9 };
+//      1
+uint seg_1_yy[7] = { 8, 28, 7, 0, 14, 1, 21 };
 
 // Set segment in CGData bitmask
 //  CGData is 5 bytes with 7 bits each = 35 segments
@@ -172,10 +215,10 @@ void display::to_seg_number(uint8_t num, uint *seg, uint8_t *cgdata)
     }
 }
 
-// Print time on digits, 1st line.
+// Print time or date on digits XX[.:]YY, 1st line.
 //  start is the position (13..15)
 //  cgr_idx is the CGRAM char to use (0..7)
-void display::print_time(int hour, int min, int start, int cgr_idx, bool on, bool dot_or_column)
+void display::print_digits(int xx, int yy, int start, int cgr_idx, bool on, bool dot_or_column)
 {
     uint8_t CGdata[5] = { 0, 0, 0, 0, 0};
     int tmp;
@@ -184,19 +227,30 @@ void display::print_time(int hour, int min, int start, int cgr_idx, bool on, boo
     if (!on)
         goto display;
 
+    // Limit numbers to 0..99
+    if (xx < 0)
+        xx = 0;
+    if (xx > 99)
+        xx = 99;
+    if (yy < 0)
+        yy = 0;
+    if (yy > 99)
+        yy = 99;
+
     // Convert time in segments
-    //  1 hour
-    tmp = hour % 10;
-    to_seg_number(tmp, seg_1_hour, CGdata);
-    //  10 hour
-    tmp = (hour / 10) % 10;
-    to_seg_number(tmp, seg_10_hour, CGdata);
-    //  1 min
-    tmp = min % 10;
-    to_seg_number(tmp, seg_1_min, CGdata);
-    //  10 min
-    tmp = (min / 10) % 10;
-    to_seg_number(tmp, seg_10_min, CGdata);
+    //  2nd 7-segments
+    tmp = xx % 10;
+    to_seg_number(tmp, seg_1_xx, CGdata);
+    //  1st 7-segments
+    tmp = (xx / 10) % 10;
+    to_seg_number(tmp, seg_10_xx, CGdata);
+    //  4th 7-segments
+    tmp = yy % 10;
+    to_seg_number(tmp, seg_1_yy, CGdata);
+    //  3rd 7-segments
+    tmp = (yy / 10) % 10;
+    to_seg_number(tmp, seg_10_yy, CGdata);
+
     // Column points: only down (.) or up-down (:)
     if (dot_or_column)
         set_segment(3, CGdata);

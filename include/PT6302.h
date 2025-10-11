@@ -123,9 +123,8 @@ public:
     /**
      * Sets the duty cycle of the display
      * @param cycles Amount of cycles (8-15 / 16)
-     * @exception throws static error if amount of cycles is not between 8 and 15
      */
-    void setDuty(const unsigned int cycles);
+    void setDuty(unsigned int cycles);
 
     /**
      * Sets the amount of digits connected to the PT6302

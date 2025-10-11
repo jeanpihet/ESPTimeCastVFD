@@ -210,9 +210,12 @@ void PT6302::setGPOP(bool p1, bool p2)
     return;
 }
 
-void PT6302::setDuty(const unsigned int cycles)
+void PT6302::setDuty(unsigned int cycles)
 {
-    assert(cycles >= 8 && cycles <= 15);
+    if (cycles < 8)
+        cycles = 8;
+    if (cycles > 15)
+        cycles = 15;
     const uint8_t values[8] = {
         0x00, // 8/16 (default)
         0x80, // 9/16

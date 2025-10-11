@@ -11,6 +11,7 @@
 #include <time.h>
 #include <WiFiClientSecure.h>
 
+#include "display.h"
 #include "tz_lookup.h"      // Timezone lookup, do not duplicate mapping here!
 #include "days_lookup.h"    // Languages for the Days of the Week
 #include "months_lookup.h"  // Languages for the Months of the Year
@@ -21,12 +22,12 @@
 #define CSB     2
 #define DIN     15
 
-//MD_Parola P = MD_Parola(HARDWARE_TYPE, DATA_PIN, CLK_PIN, CS_PIN, MAX_DEVICES);
+display P = display(CLKB, RSTB, CSB, DIN);
 AsyncWebServer server(80);
 
-// --- Global Scroll Speed Settings ---
-const int GENERAL_SCROLL_SPEED = 85;  // Default: Adjust this for Weather Description and Countdown Label (e.g., 50 for faster, 200 for slower)
-const int IP_SCROLL_SPEED = 115;      // Default: Adjust this for the IP Address display (slower for readability)
+// --- Global Scroll Speed Settings (ms) ---
+const int GENERAL_SCROLL_SPEED = 250; // Default: Adjust this for Weather Description and Countdown Label (e.g., 50 for faster, 200 for slower)
+const int IP_SCROLL_SPEED = 333;      // Default: Adjust this for the IP Address display (slower for readability)
 
 // WiFi and configuration globals
 char ssid[32] = "";
@@ -41,6 +42,10 @@ String mainDesc = "";
 String detailedDesc = "";
 
 // Timing and display settings
+int dispHour = -1;
+int dispMin = -1;
+int dispMday = -1;
+int dispMon = -1;
 unsigned long clockDuration = 10000;
 unsigned long weatherDuration = 5000;
 bool displayOff = false;
@@ -87,7 +92,7 @@ bool weatherAvailable = false;
 bool weatherFetched = false;
 bool weatherFetchInitiated = false;
 bool isAPMode = false;
-char tempSymbol = '[';
+char tempSymbol = 'C';
 bool shouldFetchWeatherNow = false;
 
 unsigned long lastSwitch = 0;
@@ -275,9 +280,9 @@ void loadConfig() {
   strlcpy(ntpServer2, doc["ntpServer2"] | "time.nist.gov", sizeof(ntpServer2));
 
   if (strcmp(weatherUnits, "imperial") == 0)
-    tempSymbol = ']';
+    tempSymbol = 'F';
   else
-    tempSymbol = '[';
+    tempSymbol = 'C';
 
 
   // --- COUNTDOWN CONFIG LOADING ---
@@ -357,10 +362,12 @@ void connectWiFi() {
   }
 
   // If credentials exist, attempt STA connection
-  WiFi.mode(WIFI_STA);
-  WiFi.disconnect(true);
-  delay(100);
+  if (WiFi.isConnected()) {
+    WiFi.disconnect(true);
+    delay(500);
+  }
 
+  WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   unsigned long startAttemptTime = millis();
 
@@ -372,6 +379,7 @@ void connectWiFi() {
   while (animating) {
     unsigned long now = millis();
     if (WiFi.status() == WL_CONNECTED) {
+      WiFi.setAutoReconnect(true);
       Serial.println("[WiFi] Connected: " + WiFi.localIP().toString());
       isAPMode = false;
 
@@ -386,10 +394,9 @@ void connectWiFi() {
       pendingIpToShow = WiFi.localIP().toString();
       showingIp = true;
       ipDisplayCount = 0;  // Reset count for IP display
-      //P.displayClear();
-      //P.setCharSpacing(1);  // Set spacing for IP scroll
-      //textEffect_t actualScrollDirection = getEffectiveScrollDirection(PA_SCROLL_LEFT, flipDisplay);
-      //P.displayScroll(pendingIpToShow.c_str(), PA_CENTER, actualScrollDirection, IP_SCROLL_SPEED);
+      if (pendingIpToShow.length() > 6)
+        P.print(pendingIpToShow.c_str() + 6); // ToDo scroll, speed IP_SCROLL_SPEED
+      delay(2000);
       // --- END IP Display initiation ---
 
       animating = false;  // Exit the connection loop
@@ -414,18 +421,20 @@ void connectWiFi() {
       Serial.println(F("[WIFI] AP Mode Started"));
       break;
     }
-    if (now - animTimer > 750) {
+    if (now - animTimer > 500) {
       animTimer = now;
-      //P.setTextAlignment(PA_CENTER);
-      switch (animFrame % 3) {
+      switch (animFrame % 4) {
         case 0:
-          //P.print(F("# ©"));
+          P.print(std::string("WiFi X"));
           break;
         case 1:
-          //P.print(F("# ª"));
+          P.print(std::string("WiFi -"));
           break;
         case 2:
-          //P.print(F("# «"));
+          P.print(std::string("WiFi +"));
+          break;
+        case 3:
+          P.print(std::string("WiFi |"));
           break;
       }
       animFrame++;
@@ -512,7 +521,7 @@ void printConfigToSerial() {
   Serial.print(F("WiFi SSID: "));
   Serial.println(ssid);
   Serial.print(F("WiFi Password: "));
-  Serial.println(password);
+  Serial.println("XXX" /*password*/);
   Serial.print(F("OpenWeather City: "));
   Serial.println(openWeatherCity);
   Serial.print(F("OpenWeather Country: "));
@@ -860,7 +869,7 @@ void setupWebServer() {
     // Handle "off" request
     if (newBrightness == -1) {
       //P.displayShutdown(true);  // Fully shut down display driver
-      //P.displayClear();
+      P.print(' ');
       displayOff = true;
       Serial.println("[WEBSERVER] Display set to OFF (shutdown mode)");
       request->send(200, "application/json", "{\"ok\":true, \"display\":\"off\"}");
@@ -868,12 +877,12 @@ void setupWebServer() {
     }
 
     // Clamp brightness to valid range
-    if (newBrightness < 0) newBrightness = 0;
+    if (newBrightness < 8) newBrightness = 8;
     if (newBrightness > 15) newBrightness = 15;
 
     // Only run robust clear/reset when coming from "off"
     if (displayOff) {
-      //P.setIntensity(newBrightness);
+      P.setIntensity(newBrightness);
       advanceDisplayModeSafe();
       //P.displayShutdown(false);
       brightness = newBrightness;
@@ -882,7 +891,7 @@ void setupWebServer() {
     } else {
       // Display already on, just set brightness
       brightness = newBrightness;
-      //P.setIntensity(brightness);
+      P.setIntensity(brightness);
       Serial.printf("[WEBSERVER] Set brightness to %d\n", brightness);
     }
 
@@ -896,8 +905,6 @@ void setupWebServer() {
       flip = (v == "1" || v == "true" || v == "on");
     }
     flipDisplay = flip;
-    //P.setZoneEffect(0, flipDisplay, PA_FLIP_UD);
-    //P.setZoneEffect(0, flipDisplay, PA_FLIP_LR);
     Serial.printf("[WEBSERVER] Set flipDisplay to %d\n", flipDisplay);
     request->send(200, "application/json", "{\"ok\":true}");
   });
@@ -1000,10 +1007,10 @@ void setupWebServer() {
       String v = request->getParam("value", true)->value();
       if (v == "1" || v == "true" || v == "on") {
         strcpy(weatherUnits, "imperial");
-        tempSymbol = ']';
+        tempSymbol = 'F';
       } else {
         strcpy(weatherUnits, "metric");
-        tempSymbol = '[';
+        tempSymbol = 'C';
       }
       Serial.printf("[WEBSERVER] Set weatherUnits to %s\n", weatherUnits);
       shouldFetchWeatherNow = true;
@@ -1328,7 +1335,7 @@ void fetchWeather() {
 
     if (doc.containsKey(F("main")) && doc[F("main")].containsKey(F("temp"))) {
       float temp = doc[F("main")][F("temp")];
-      currentTemp = String((int)round(temp)) + "º";
+      currentTemp = String((int)round(temp)) + "\xb0" /*"°"*/ + tempSymbol;
       Serial.printf("[WEATHER] Temp: %s\n", currentTemp.c_str());
       weatherAvailable = true;
     } else {
@@ -1385,6 +1392,9 @@ DisplayMode key:
 void setup() {
   Serial.begin(115200);
   delay(1000);
+
+  P.init();
+
   Serial.println();
   Serial.println(F("[SETUP] Starting setup..."));
 
@@ -1397,17 +1407,10 @@ void setup() {
   }
   Serial.println(F("[SETUP] LittleFS file system mounted successfully."));
 
-  //P.begin();  // Initialize Parola library
-
-  //P.setCharSpacing(0);
-  //P.setFont(mFactory);
   loadConfig();  // This function now has internal yields and prints
 
-  //P.setIntensity(brightness);
-  //P.setZoneEffect(0, flipDisplay, PA_FLIP_UD);
-  //P.setZoneEffect(0, flipDisplay, PA_FLIP_LR);
-
-  Serial.println(F("[SETUP] Parola (LED Matrix) initialized"));
+  P.setIntensity(10);
+  P.print("* setup *");
 
   connectWiFi();
 
@@ -1606,27 +1609,32 @@ void loop() {
   static unsigned long lastFetch = 0;
   const unsigned long fetchInterval = 300000;  // 5 minutes
 
-
+  if (!isAPMode && WiFi.status() != WL_CONNECTED) {
+    Serial.println("[WiFi] Reconnecting...");
+    WiFi.reconnect();
+  }
 
   // AP Mode animation
   static unsigned long apAnimTimer = 0;
   static int apAnimFrame = 0;
   if (isAPMode) {
     unsigned long now = millis();
-    if (now - apAnimTimer > 750) {
+    if (now - apAnimTimer > 500) {
       apAnimTimer = now;
       apAnimFrame++;
     }
-    //P.setTextAlignment(PA_CENTER);
-    switch (apAnimFrame % 3) {
+    switch (apAnimFrame % 4) {
       case 0:
-        //P.print(F("= ©"));
+        P.print(std::string("AP X"));
         break;
       case 1:
-        //P.print(F("= ª"));
+        P.print(std::string("AP -"));
         break;
       case 2:
-        //P.print(F("= «"));
+        P.print(std::string("AP +"));
+        break;
+      case 3:
+        P.print(std::string("AP |"));
         break;
     }
     yield();
@@ -1634,12 +1642,30 @@ void loop() {
   }
 
 
-  // Dimming
+  // Get current time and date
   time_t now_time = time(nullptr);
   struct tm timeinfo;
   localtime_r(&now_time, &timeinfo);
   int curHour = timeinfo.tm_hour;
   int curMinute = timeinfo.tm_min;
+  int curMday = timeinfo.tm_mday;
+  int curMon = timeinfo.tm_mon + 1;
+
+
+  // Always display time HH:MM and date DD.MM on the 1st line digits
+  if (curHour != dispHour || curMinute != dispMin)
+    P.print_time_big(curHour, curMinute, true);
+
+  if (curMday != dispMday || curMon != dispMon)
+    P.print_date_small(curMday, curMon, true);
+  
+  dispHour = curHour;
+  dispMin = curMinute;
+  dispMday = curMday;
+  dispMon = curMon;
+
+
+  // Dimming
   int curTotal = curHour * 60 + curMinute;
   int startTotal = dimStartHour * 60 + dimStartMinute;
   int endTotal = dimEndHour * 60 + dimEndMinute;
@@ -1659,7 +1685,7 @@ void loop() {
       if (!displayOff) {
         Serial.println(F("[DISPLAY] Turning display OFF (dimming -1)"));
         //P.displayShutdown(true);
-        //P.displayClear();
+        P.print(' ');
         displayOff = true;
         displayOffByDimming = true;
         displayOffByBrightness = false;
@@ -1671,7 +1697,7 @@ void loop() {
         displayOff = false;
         displayOffByDimming = false;
       }
-      //P.setIntensity(targetBrightness);
+      P.setIntensity(targetBrightness);
     }
   } else {
     // Dimming disabled: just obey brightness slider
@@ -1679,7 +1705,7 @@ void loop() {
       if (!displayOff) {
         Serial.println(F("[DISPLAY] Turning display OFF (brightness -1)"));
         //P.displayShutdown(true);
-        //P.displayClear();
+        P.print(' ');
         displayOff = true;
         displayOffByBrightness = true;
         displayOffByDimming = false;
@@ -1691,7 +1717,7 @@ void loop() {
         displayOff = false;
         displayOffByBrightness = false;
       }
-      //P.setIntensity(brightness);
+      P.setIntensity(brightness);
     }
   }
 
@@ -1712,14 +1738,15 @@ void loop() {
 
   // --- IP Display ---
   if (showingIp) {
-    if (1 /*P.displayAnimate()*/) {
+    if (ipDisplayCount <= ipDisplayMax /*P.displayAnimate()*/) {       // ToDo scroll
       ipDisplayCount++;
       if (ipDisplayCount < ipDisplayMax) {
-        //textEffect_t actualScrollDirection = getEffectiveScrollDirection(PA_SCROLL_LEFT, flipDisplay);
-        //P.displayScroll(pendingIpToShow.c_str(), PA_CENTER, actualScrollDirection, 120);
+        if (pendingIpToShow.length() > 6)
+          P.print(pendingIpToShow.c_str() + 6); // ToDo scroll, speed 120
+        delay(1000);
       } else {
         showingIp = false;
-        //P.displayClear();
+        P.print(' ');
         delay(500);  // Blocking delay as in working copy
         displayMode = 0;
         lastSwitch = millis();
@@ -1736,7 +1763,7 @@ void loop() {
     if (!displayOff) {
       Serial.println(F("[DISPLAY] Turning display OFF"));
       //P.displayShutdown(true);  // fully off
-      //P.displayClear();
+      P.print(' ');
       displayOff = true;
     }
     yield();
@@ -1865,6 +1892,7 @@ void loop() {
 
   // keep spacing logic the same ---
   char timeSpacedStr[24];
+#if 0
   int j = 0;
   for (int i = 0; timeWithSeconds[i] != '\0'; i++) {
     timeSpacedStr[j++] = timeWithSeconds[i];
@@ -1873,6 +1901,10 @@ void loop() {
     }
   }
   timeSpacedStr[j] = '\0';
+#else
+  memcpy(timeSpacedStr, timeWithSeconds, sizeof(timeWithSeconds));
+  timeSpacedStr[sizeof(timeWithSeconds) - 1] = '\0';
+#endif
 
   // build final string ---
   String formattedTime;
@@ -1903,7 +1935,6 @@ void loop() {
 
   // --- CLOCK Display Mode ---
   if (displayMode == 0) {
-    //P.setCharSpacing(0);
 
     // --- NTP SYNC ---
     if (ntpState == NTP_SYNCING) {
@@ -1911,15 +1942,18 @@ void loop() {
         ntpState = NTP_FAILED;
       } else if (millis() - ntpAnimTimer > 750) {
         ntpAnimTimer = millis();
-        switch (ntpAnimFrame % 3) {
+        switch (ntpAnimFrame % 4) {
           case 0:
-            //P.print(F("S Y N C ®"));
+            P.print(std::string("Ntp X"));
             break;
           case 1:
-            //P.print(F("S Y N C ¯"));
+            P.print(std::string("Ntp -"));
             break;
           case 2:
-            //P.print(F("S Y N C °"));
+            P.print(std::string("Ntp +"));
+            break;
+          case 3:
+            P.print(std::string("Ntp |"));
             break;
         }
         ntpAnimFrame++;
@@ -1927,7 +1961,6 @@ void loop() {
     }
     // --- NTP / WEATHER ERROR ---
     else if (!ntpSyncSuccessful) {
-      //P.setTextAlignment(PA_CENTER);
       static unsigned long errorAltTimer = 0;
       static bool showNtpError = true;
 
@@ -1936,11 +1969,11 @@ void loop() {
           errorAltTimer = millis();
           showNtpError = !showNtpError;
         }
-        //P.print(showNtpError ? F("?/") : F("?*"));
+        P.print(showNtpError ? std::string("?/") : std::string("?*"));
       } else if (!ntpSyncSuccessful) {
-        //P.print(F("?/"));
+        P.print(std::string("?/"));
       } else if (!weatherAvailable) {
-        //P.print(F("?*"));
+        P.print(std::string("?*"));
       }
     }
     // --- DISPLAY CLOCK ---
@@ -1973,8 +2006,7 @@ void loop() {
 #endif
         clockScrollDone = true;  // mark scroll done
       } else {
-        //P.setTextAlignment(PA_CENTER);
-        //P.print(timeString);
+        P.print(timeString.c_str());
       }
     }
 
@@ -1994,16 +2026,15 @@ void loop() {
   // --- WEATHER Display Mode ---
   static bool weatherWasAvailable = false;
   if (displayMode == 1) {
-    //P.setCharSpacing(1);
     if (weatherAvailable) {
       String weatherDisplay;
       if (showHumidity && currentHumidity != -1) {
         int cappedHumidity = (currentHumidity > 99) ? 99 : currentHumidity;
-        weatherDisplay = currentTemp + " " + String(cappedHumidity) + "%";
+        weatherDisplay = currentTemp + "  "  + String(cappedHumidity) + "%";
       } else {
-        weatherDisplay = currentTemp + tempSymbol;
+        weatherDisplay = currentTemp;
       }
-      //P.print(weatherDisplay.c_str());
+      P.print(weatherDisplay.c_str());
       weatherWasAvailable = true;
     } else {
       if (weatherWasAvailable) {
@@ -2013,12 +2044,9 @@ void loop() {
       if (ntpSyncSuccessful) {
         String timeString = formattedTime;
         if (!colonVisible) timeString.replace(":", " ");
-        //P.setCharSpacing(0);
-        //P.print(timeString);
+        P.print(timeString.c_str());
       } else {
-        //P.setCharSpacing(0);
-        //P.setTextAlignment(PA_CENTER);
-        //P.print(F("?*"));
+        P.print(std::string("?*"));
       }
     }
     yield();
@@ -2036,14 +2064,13 @@ void loop() {
     static char descBuffer[128];  // large enough for OWM translations
     desc.toCharArray(descBuffer, sizeof(descBuffer));
 
-    if (desc.length() > 8) {
+    if (0 /*desc.length() > P.DISP_MAX_LEN*/) {   // ToDo scroll
       if (!descScrolling) {
-        //textEffect_t actualScrollDirection = getEffectiveScrollDirection(PA_SCROLL_LEFT, flipDisplay);
-        //P.displayScroll(descBuffer, PA_CENTER, actualScrollDirection, GENERAL_SCROLL_SPEED);
+        P.print(descBuffer); // ToDo scroll GENERAL_SCROLL_SPEED
         descScrolling = true;
         descScrollEndTime = 0;  // reset end time at start
       }
-      if (1 /*P.displayAnimate()*/) {
+      if (1 /*P.displayAnimate()*/) {         // ToDo scroll
         if (descScrollEndTime == 0) {
           descScrollEndTime = millis();  // mark the time when scroll finishes
         }
@@ -2060,9 +2087,7 @@ void loop() {
       return;
     } else {
       if (descStartTime == 0) {
-        //P.setTextAlignment(PA_CENTER);
-        //P.setCharSpacing(1);
-        //P.print(descBuffer);
+        P.print(descBuffer);
         descStartTime = millis();
       }
       if (millis() - descStartTime > descriptionDuration) {
@@ -2116,21 +2141,17 @@ void loop() {
         const char *hourglassFrames[] = { "¡", "¢", "£", "¤" };
         for (int repeat = 0; repeat < 3; repeat++) {
           for (int i = 0; i < 4; i++) {
-            //P.setTextAlignment(PA_CENTER);
-            //P.setCharSpacing(0);
-            //P.print(hourglassFrames[i]);
+            P.print(hourglassFrames[i]);
             delay(350);  // This is blocking! (Total ~4.2 seconds for hourglass)
           }
         }
         Serial.println("[COUNTDOWN-FINISH] Played hourglass animation.");
-        //P.displayClear();  // Clear display after hourglass animation
+        P.print(' ');   // Clear display after hourglass animation
 
         // 2. Initialize Flashing "TIMES UP" for its very first frame
         flashingMessageFrame = 0;
         lastFlashingSwitch = millis();  // Set initial time for first flash frame
-        //P.setTextAlignment(PA_CENTER);
-        //P.setCharSpacing(0);
-        //P.print(flashFrames[flashingMessageFrame]);             // Display the first frame immediately
+        P.print(flashFrames[flashingMessageFrame]);             // Display the first frame immediately
         flashingMessageFrame = (flashingMessageFrame + 1) % 2;  // Prepare for the next frame
 
         hourglassPlayed = true;  // <-- Mark that this initial combined sequence has completed!
@@ -2143,13 +2164,11 @@ void loop() {
       if (millis() - countdownFinishedMessageStartTime < 15000) {  // Flashing duration
         if (millis() - lastFlashingSwitch >= 500) {                // Check for flashing interval
           lastFlashingSwitch = millis();
-          //P.displayClear();
-          //P.setTextAlignment(PA_CENTER);
-          //P.setCharSpacing(0);
-          //P.print(flashFrames[flashingMessageFrame]);
+          P.print(' ');
+          P.print(flashFrames[flashingMessageFrame]);
           flashingMessageFrame = (flashingMessageFrame + 1) % 2;
         }
-        //P.displayAnimate();  // Ensure display updates
+        //P.displayAnimate();  // Ensure display updates      // ToDo scroll
         yield();
         return;  // Stay in this mode until the 15 seconds are over
       } else {
@@ -2165,7 +2184,6 @@ void loop() {
         countdownLabel[0] = '\0';
         saveCountdownConfig(false, 0, "");
 
-        //P.setInvert(false);
         advanceDisplayMode();
         yield();
         return;  // Exit loop after processing
@@ -2188,7 +2206,7 @@ void loop() {
 
         if (segmentStartTime == 0 || (millis() - segmentStartTime > SEGMENT_DISPLAY_DURATION)) {
           segmentStartTime = millis();
-          //P.displayClear();
+          P.print(' ');
 
           switch (countdownSegment) {
             case 0:  // Days
@@ -2231,20 +2249,16 @@ void loop() {
                 sprintf(secondsBuf, "%02ld %s", currentSecond, currentSecond == 1 ? "SEC" : "SECS");
                 String secondsText = String(secondsBuf);
                 Serial.printf("[COUNTDOWN-STATIC] Displaying segment 3: %s\n", secondsText.c_str());
-                //P.displayClear();
-                //P.setTextAlignment(PA_CENTER);
-                //P.setCharSpacing(1);
-                //P.print(secondsText.c_str());
+                P.print(' ');
+                P.print(secondsText.c_str());
                 delay(SEGMENT_DISPLAY_DURATION - 400);
 
                 unsigned long elapsed = millis() - segmentStartMillis;
                 long adjustedSecond = (countdownTargetTimestamp - segmentStartTime - (elapsed / 1000)) % 60;
                 sprintf(secondsBuf, "%02ld %s", adjustedSecond, adjustedSecond == 1 ? "SEC" : "SECS");
                 secondsText = String(secondsBuf);
-                //P.displayClear();
-                //P.setTextAlignment(PA_CENTER);
-                //P.setCharSpacing(1);
-                //P.print(secondsText.c_str());
+                P.print(' ');
+                P.print(secondsText.c_str());
                 delay(400);
 
                 String label;
@@ -2265,14 +2279,11 @@ void loop() {
                   label = fallbackLabels[randomIndex];
                 }
 
-                //P.setTextAlignment(PA_LEFT);
-                //P.setCharSpacing(1);
-                //textEffect_t actualScrollDirection = getEffectiveScrollDirection(PA_SCROLL_LEFT, flipDisplay);
-                //P.displayScroll(label.c_str(), PA_LEFT, actualScrollDirection, GENERAL_SCROLL_SPEED);
+                P.print(label.c_str());               // ToDo scroll GENERAL_SCROLL_SPEED
 
-                while (1 /*!P.displayAnimate()*/) {
-                  yield();
-                }
+                //while (1 /*!P.displayAnimate()*/) {   // ToDo scroll
+                //  yield();
+                //}
                 countdownSegment++;
                 segmentStartTime = millis();
                 break;
@@ -2281,8 +2292,6 @@ void loop() {
               Serial.println("[COUNTDOWN-STATIC] All segments and label displayed. Advancing to Clock.");
               countdownSegment = 0;
               segmentStartTime = 0;
-              //P.setTextAlignment(PA_CENTER);
-              //P.setCharSpacing(1);
               advanceDisplayMode();
               yield();
               return;
@@ -2295,12 +2304,10 @@ void loop() {
           }
 
           if (currentSegmentText.length() > 0) {
-            //P.setTextAlignment(PA_CENTER);
-            //P.setCharSpacing(1);
-            //P.print(currentSegmentText.c_str());
+            P.print(currentSegmentText.c_str());
           }
         }
-        //P.displayAnimate();
+        //P.displayAnimate();       // ToDo scroll
       }
 
       // --- NEW: SINGLE-LINE COUNTDOWN LOGIC ---
@@ -2337,28 +2344,21 @@ void loop() {
         String fullString = String(buf);
 
         // Display the full string and scroll it
-        //P.setTextAlignment(PA_LEFT);
-        //P.setCharSpacing(1);
-        //textEffect_t actualScrollDirection = getEffectiveScrollDirection(PA_SCROLL_LEFT, flipDisplay);
-        //P.displayScroll(fullString.c_str(), PA_LEFT, actualScrollDirection, GENERAL_SCROLL_SPEED);
+        P.print(fullString.c_str());      // ToDo scroll GENERAL_SCROLL_SPEED;
 
         // Blocking loop to ensure the full message scrolls
-        while (1 /*!P.displayAnimate()*/) {
-          yield();
-        }
+        //while (1 /*!P.displayAnimate()*/) {   // ToDo scroll
+        //  yield();
+        //}
 
         // After scrolling is complete, we're done with this display mode
         // Move to the next mode and exit the function.
-        //P.setTextAlignment(PA_CENTER);
         advanceDisplayMode();
         yield();
         return;
       }
     }
 
-    // Keep alignment reset just in case
-    //P.setTextAlignment(PA_CENTER);
-    //P.setCharSpacing(1);
     yield();
     return;
   }  // End of if (displayMode == 3 && ...)
@@ -2422,18 +2422,14 @@ void loop() {
 
       String displayText = String(currentGlucose) + String(arrow);
 
-      //P.setTextAlignment(PA_CENTER);
-      //P.setCharSpacing(1);
-      //P.print(displayText.c_str());
+      P.print(displayText.c_str());
 
       delay(weatherDuration);
       advanceDisplayMode();
       return;
     } else {
       // If no data is available after the first fetch attempt, show an error and advance
-      //P.setTextAlignment(PA_CENTER);
-      //P.setCharSpacing(0);
-      //P.print(F("?)"));
+      P.print("?)");
       delay(2000);  // Wait 2 seconds before advancing
       advanceDisplayMode();
       return;
@@ -2454,14 +2450,14 @@ void loop() {
     // Get localized month names
     const char *const *months = getMonthsOfYear(language);
     String monthAbbr = String(months[timeinfo.tm_mon]).substring(0, 5);
-    monthAbbr.toLowerCase();
+    //monthAbbr.toLowerCase();
 
     // Add spaces between day digits
     String dayString = String(timeinfo.tm_mday);
     String spacedDay = "";
     for (size_t i = 0; i < dayString.length(); i++) {
       spacedDay += dayString[i];
-      if (i < dayString.length() - 1) spacedDay += " ";
+      //if (i < dayString.length() - 1) spacedDay += " ";
     }
 
     // Function to check if day should come first for given language
@@ -2520,9 +2516,7 @@ void loop() {
       }
     }
 
-    //P.setTextAlignment(PA_CENTER);
-    //P.setCharSpacing(0);
-    //P.print(dateString);
+    P.print(dateString.c_str());
 
     if (millis() - lastSwitch > weatherDuration) {
       advanceDisplayMode();

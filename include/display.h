@@ -21,14 +21,24 @@ public:
      */
     display(unsigned int clkb, unsigned int rstb, unsigned int csb, unsigned int din);
 
-    // Print time on small digits, 1st line left
-    void print_time_small(int hour, int min, bool on);
+    void init();
+
+    // Set brightness 8..15
+    void setIntensity(int brightness);
+
+    // Print date on small digits, 1st line left
+    void print_date_small(int day, int month, bool on);
 
     // Print time on big digits, 1st line middle
     void print_time_big(int hour, int min, bool on);
 
     // Print on the 2nd line, which has 12 fully graphical digits
-    void print_2nd_line(const char *c, bool overwrite);
+    void print(const char c);
+    void print(std::string str);
+    // Max display size on 2nd line
+    static const size_t DISP_MAX_LEN = 12;
+    //  max buffer size for scrolling
+    static const size_t PRINT_MAX_LEN = 128;
 
     // Red clock icon on/off
     void clock_icon(bool on);
@@ -40,6 +50,8 @@ private:
 
     // Instance of the PT6302 VFD controler
     PT6302 *vfd;
+
+    char print_str[PRINT_MAX_LEN];
 
     // Num 0-9 to 7 segments. Bits order is MSB - g, f, e, d, c, b, a - LSB
     uint8_t to_7_seg(uint8_t num);
@@ -63,8 +75,8 @@ private:
     // Fill in VFD segments CGData from num 0-9
     void to_seg_number(uint8_t num, uint *seg, uint8_t *cgdata);
 
-    // Print time on digits, 1st line.
-    void print_time(int hour, int min, int start, int cgr_idx, bool on, bool dot_or_column);
+    // Print time on digits XX[.:]YY, 1st line.
+    void print_digits(int xx, int yy, int start, int cgr_idx, bool on, bool dot_or_column);
 
 };
 
