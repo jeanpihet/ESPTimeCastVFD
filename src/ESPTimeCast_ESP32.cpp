@@ -135,7 +135,7 @@ static bool hourglassPlayed = false;
 // Weather Description Mode handling
 unsigned long descStartTime = 0;  // For static description
 bool descScrolling = false;
-const unsigned long descriptionScrollPause = 1500;  // 300ms pause after scroll
+const unsigned long descriptionScrollPause = 1500;  // Pause after scroll
 
 // --- Safe WiFi credential getters ---
 const char *getSafeSsid() {
@@ -1654,9 +1654,13 @@ void loop() {
   if (curHour != dispHour || curMinute != dispMin)
     P.print_time_big(curHour, curMinute, true);
 
-  if (curMday != dispMday || curMon != dispMon)
-    P.print_date_small(curMday, curMon, true);
-  
+  if (curMday != dispMday || curMon != dispMon) {
+    if (strcmp(weatherUnits, "imperial") == 0)
+      P.print_date_small(curMon, curMday, true);
+    else
+      P.print_date_small(curMday, curMon, true);
+  }
+
   dispHour = curHour;
   dispMin = curMinute;
   dispMday = curMday;
@@ -1990,15 +1994,20 @@ void loop() {
         shouldScrollIn = true;  // only scroll in if weather was scrolling
       }
 
-      if (shouldScrollIn && !clockScrollDone) {
 #if 0
+
+      if (shouldScrollIn && !clockScrollDone) {
         P.print(timeString.c_str());
         while (!P.scroll()) yield();
-#endif
         clockScrollDone = true;  // mark scroll done
       } else {
         P.print(timeString.c_str());
       }
+#else
+      // Skip clock mode 0, time is displayed on the small digits. Day of week will be
+      // displayed with the date.
+      advanceDisplayMode();
+#endif
     }
 
     yield();
@@ -2489,9 +2498,9 @@ void loop() {
 
     } else {
       if (isDayFirst(language)) {
-        dateString = spacedDay + "   " + monthAbbr;
+        dateString = String(daySymbol) + " " + spacedDay + " " + monthAbbr;
       } else {
-        dateString = monthAbbr + "   " + spacedDay;
+        dateString = String(daySymbol) + " " + monthAbbr + " " + spacedDay;
       }
     }
 
