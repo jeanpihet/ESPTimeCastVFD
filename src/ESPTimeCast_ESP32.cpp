@@ -51,6 +51,7 @@ bool twelveHourToggle = false;
 bool showDayOfWeek = true;
 bool showDate = false;
 bool showHumidity = false;
+bool showWindSpeed = false;
 bool colonBlinkEnabled = true;
 char ntpServer1[64] = "pool.ntp.org";
 char ntpServer2[256] = "time.nist.gov";
@@ -82,6 +83,8 @@ const byte DNS_PORT = 53;
 DNSServer dnsServer;
 
 String currentTemp = "";
+int currentWindSpeed, currentWindGust;
+String windSpeed = "";
 String weatherDescription = "";
 bool showWeatherDescription = false;
 bool weatherAvailable = false;
@@ -132,10 +135,19 @@ unsigned long lastFlashToggleTime = 0;                // For controlling the fla
 bool currentInvertState = false;                      // Current state of display inversion for flashing
 static bool hourglassPlayed = false;
 
-// Weather Description Mode handling
-unsigned long descStartTime = 0;  // For static description
-bool descScrolling = false;
-const unsigned long descriptionScrollPause = 1500;  // Pause after scroll
+// Weather data and description Mode handling
+unsigned long weatherStartTime = 0;
+enum WeatherScrolling {
+  WSNone,
+  WSPreScroll,
+  WSScrolling,
+  WSPostScroll,
+};
+WeatherScrolling weatherScrolling = WSNone;
+
+// Global display and scroll timings
+const unsigned long displayScrollPrePause = 1000;  // Pause before scroll
+const unsigned long displayScrollPostPause = 2000;  // Pause after scroll
 
 // --- Safe WiFi credential getters ---
 const char *getSafeSsid() {
@@ -191,6 +203,7 @@ void loadConfig() {
     doc[F("showDayOfWeek")] = showDayOfWeek;
     doc[F("showDate")] = false;
     doc[F("showHumidity")] = showHumidity;
+    doc[F("showWindSpeed")] = showWindSpeed;
     doc[F("colonBlinkEnabled")] = colonBlinkEnabled;
     doc[F("ntpServer1")] = ntpServer1;
     doc[F("ntpServer2")] = ntpServer2;
@@ -258,6 +271,7 @@ void loadConfig() {
   showDayOfWeek = doc["showDayOfWeek"] | true;
   showDate = doc["showDate"] | false;
   showHumidity = doc["showHumidity"] | false;
+  showWindSpeed = doc["showWindSpeed"] | false;
   colonBlinkEnabled = doc.containsKey("colonBlinkEnabled") ? doc["colonBlinkEnabled"].as<bool>() : true;
   showWeatherDescription = doc["showWeatherDescription"] | false;
 
@@ -390,9 +404,10 @@ void connectWiFi() {
       ipDisplayCount = 0;  // Reset count for IP display
       if (pendingIpToShow.length() > 0)
         P.print(pendingIpToShow.c_str());
+      delay(displayScrollPrePause);
       while (P.scroll())
         yield();
-      delay(2000);
+      delay(displayScrollPostPause);
       // --- END IP Display initiation ---
 
       animating = false;  // Exit the connection loop
@@ -548,6 +563,8 @@ void printConfigToSerial() {
   Serial.println(showWeatherDescription ? "Yes" : "No");
   Serial.print(F("Show Humidity: "));
   Serial.println(showHumidity ? "Yes" : "No");
+  Serial.print(F("Show Wind Speed: "));
+  Serial.println(showWindSpeed ? "Yes" : "No");
   Serial.print(F("Blinking colon: "));
   Serial.println(colonBlinkEnabled ? "Yes" : "No");
   Serial.print(F("NTP Server 1: "));
@@ -649,6 +666,7 @@ void setupWebServer() {
       else if (n == "showDayOfWeek") doc[n] = (v == "true" || v == "on" || v == "1");
       else if (n == "showDate") doc[n] = (v == "true" || v == "on" || v == "1");
       else if (n == "showHumidity") doc[n] = (v == "true" || v == "on" || v == "1");
+      else if (n == "showWindSpeed") doc[n] = (v == "true" || v == "on" || v == "1");
       else if (n == "colonBlinkEnabled") doc[n] = (v == "true" || v == "on" || v == "1");
       else if (n == "dimStartHour") doc[n] = v.toInt();
       else if (n == "dimStartMinute") doc[n] = v.toInt();
@@ -946,6 +964,17 @@ void setupWebServer() {
     }
     showHumidity = showHumidityNow;
     Serial.printf("[WEBSERVER] Set showHumidity to %d\n", showHumidity);
+    request->send(200, "application/json", "{\"ok\":true}");
+  });
+
+  server.on("/set_windspeed", HTTP_POST, [](AsyncWebServerRequest *request) {
+    bool showWindSpeedNow = false;
+    if (request->hasParam("value", true)) {
+      String v = request->getParam("value", true)->value();
+      showWindSpeedNow = (v == "1" || v == "true" || v == "on");
+    }
+    showWindSpeed = showWindSpeedNow;
+    Serial.printf("[WEBSERVER] Set showWindSpeed to %d\n", showWindSpeed);
     request->send(200, "application/json", "{\"ok\":true}");
   });
 
@@ -1365,6 +1394,25 @@ void fetchWeather() {
     Serial.printf("[WEATHER] Description used: %s\n", weatherDescription.c_str());
     weatherFetched = true;
 
+    // Wind speed in km/h
+    if (doc.containsKey(F("wind")) && doc[F("wind")].containsKey(F("speed"))) {
+      float temp = doc[F("wind")][F("speed")];
+      currentWindSpeed = (int)round(temp);
+      currentWindSpeed *= 3.6f;
+    } else {
+      currentWindSpeed = -1;
+    }
+
+    // Wind gusts in km/h
+    if (doc.containsKey(F("wind")) && doc[F("wind")].containsKey(F("gust"))) {
+      float temp = doc[F("wind")][F("gust")];
+      currentWindGust = (int)round(temp);
+      currentWindGust *= 3.6f;
+    } else {
+      currentWindGust = -1;
+    }
+
+    Serial.printf("[WEATHER] Wind speed: %d-%d km/h\n", currentWindSpeed, currentWindGust);
   } else {
     Serial.printf("[WEATHER] HTTP GET failed, error code: %d, reason: %s\n", httpCode, http.errorToString(httpCode).c_str());
     weatherAvailable = false;
@@ -1740,23 +1788,25 @@ void loop() {
 
   // --- IP Display ---
   if (showingIp) {
-    if (pendingIpToShow.length()) {
+    // IP displayed in connectWiFi
+    if (0 /*pendingIpToShow.length()*/) {
       if (P.scroll()) {
         yield();
+        return;  // Exit loop early if showing IP
       } else {
         showingIp = false;
         if (pendingIpToShow.length() > 0)
-          delay(2000);  // Blocking delay as in working copy
+          delay(displayScrollPostPause);   // Blocking delay as in working copy
         P.print(" ");
         displayMode = 0;
         lastSwitch = millis();
       }
     } else {
+      showingIp = false;
       P.print(" ");
       displayMode = 0;
       lastSwitch = millis();
     }
-    return;  // Exit loop early if showing IP
   }
 
 
@@ -1839,9 +1889,8 @@ void loop() {
   }
 
 
-  // Only advance mode by timer for clock/weather, not description!
-  unsigned long displayDuration = (displayMode == 0) ? clockDuration : weatherDuration;
-  if ((displayMode == 0 || displayMode == 1) && millis() - lastSwitch > displayDuration) {
+  // Only advance mode by timer for clock, not weather and description!
+  if (displayMode == 0 && millis() - lastSwitch > clockDuration) {
     advanceDisplayMode();
   }
 
@@ -1917,16 +1966,9 @@ void loop() {
     formattedTime = String(timeSpacedStr);
   }
 
-  unsigned long currentDisplayDuration = 0;
-  if (displayMode == 0) {
-    currentDisplayDuration = clockDuration;
-  } else if (displayMode == 1) {  // Weather
-    currentDisplayDuration = weatherDuration;
-  }
-
-  // Only advance mode by timer for clock/weather static (Mode 0 & 1).
-  // Other modes (2, 3) have their own internal timers/conditions for advancement.
-  if ((displayMode == 0 || displayMode == 1) && (millis() - lastSwitch > currentDisplayDuration)) {
+  // Only advance mode by timer for clock static (Mode 0).
+  // Other modes (1, 2, 3) have their own internal timers/conditions for advancement.
+  if (displayMode == 0 && (millis() - lastSwitch > clockDuration)) {
     advanceDisplayMode();
   }
 
@@ -2027,15 +2069,64 @@ void loop() {
   static bool weatherWasAvailable = false;
   if (displayMode == 1) {
     if (weatherAvailable) {
-      String weatherDisplay;
+      String weatherDisplay = "";
+
+      // Humidity %
       if (showHumidity && currentHumidity != -1) {
         int cappedHumidity = (currentHumidity > 99) ? 99 : currentHumidity;
-        weatherDisplay = currentTemp + "  "  + String(cappedHumidity) + "%";
-      } else {
-        weatherDisplay = currentTemp;
+        weatherDisplay = String(cappedHumidity) + "% ";
       }
-      P.print(weatherDisplay.c_str());
+
+      // Wind speed 'speed-gust km/h'
+      if (showWindSpeed && (currentWindSpeed != -1 || currentWindGust != -1)) {
+        weatherDisplay += String(currentWindSpeed) + "-" + String(currentWindGust) + "k/h ";
+      }
+
+      // Temperature
+      weatherDisplay += currentTemp;
+
       weatherWasAvailable = true;
+      if (weatherStartTime == 0) {
+        // Print
+        P.print(weatherDisplay.c_str());
+        weatherStartTime = millis();
+        weatherScrolling = WSPreScroll;
+      } else {
+        switch (weatherScrolling) {
+        case WSPreScroll:
+          // Pre-scroll pause
+          if (millis() - weatherStartTime > displayScrollPrePause) {
+            weatherStartTime = millis();
+            weatherScrolling = WSScrolling;
+          }
+          break;
+        case WSScrolling:
+          // Scrolling
+          if (!P.scroll()) {
+            weatherStartTime = millis();
+            weatherScrolling = WSPostScroll;
+          }
+          break;
+        case WSPostScroll:
+          // Post-scroll pause
+          if (millis() - weatherStartTime > displayScrollPostPause) {
+            weatherStartTime = 0;
+            weatherScrolling = WSNone;
+            advanceDisplayMode();
+          }
+          break;
+        default:
+          // Error case
+          weatherStartTime = 0;
+          weatherScrolling = WSNone;
+          advanceDisplayMode();
+          break;
+        }
+      }
+
+      yield();
+      return;
+
     } else {
       if (weatherWasAvailable) {
         Serial.println(F("[DISPLAY] Weather not available, showing clock..."));
@@ -2049,42 +2140,56 @@ void loop() {
         P.print(std::string("?*"));
       }
     }
+
     yield();
     return;
   }
 
 
-
-
   // --- WEATHER DESCRIPTION Display Mode ---
   if (displayMode == 2 && showWeatherDescription && weatherAvailable && weatherDescription.length() > 0) {
-    String desc = weatherDescription;
-
-    // prepare safe buffer
-    static char descBuffer[128];  // large enough for OWM translations
-    desc.toCharArray(descBuffer, sizeof(descBuffer));
-
-    if (descStartTime == 0) {
+    if (weatherStartTime == 0) {
+      // prepare safe buffer
+      String desc = weatherDescription;
+      static char descBuffer[128];  // large enough for OWM translations
+      desc.toCharArray(descBuffer, sizeof(descBuffer));
+      // Print
       P.print(descBuffer);
-      descStartTime = millis();
-      descScrolling = true;
+      weatherStartTime = millis();
+      weatherScrolling = WSPreScroll;
     } else {
-      if (descScrolling && P.scroll()) {
-        yield();
-        return;
-      }
-
-      // Scrolling done
-      if (descScrolling)
-        descStartTime = millis();
-      descScrolling = false;
-
-      // Wait after scrolling done
-      if (millis() - descStartTime > descriptionScrollPause) {
-        descStartTime = 0;
+      switch (weatherScrolling) {
+      case WSPreScroll:
+        // Pre-scroll pause
+        if (millis() - weatherStartTime > displayScrollPrePause) {
+          weatherStartTime = millis();
+          weatherScrolling = WSScrolling;
+        }
+        break;
+      case WSScrolling:
+        // Scrolling
+        if (!P.scroll()) {
+          weatherStartTime = millis();
+          weatherScrolling = WSPostScroll;
+        }
+        break;
+      case WSPostScroll:
+        // Post-scroll pause
+        if (millis() - weatherStartTime > displayScrollPostPause) {
+          weatherStartTime = 0;
+          weatherScrolling = WSNone;
+          advanceDisplayMode();
+        }
+        break;
+      default:
+        // Error case
+        weatherStartTime = 0;
+        weatherScrolling = WSNone;
         advanceDisplayMode();
+        break;
       }
     }
+
     yield();
     return;
   }
@@ -2506,7 +2611,7 @@ void loop() {
 
     P.print(dateString.c_str());
 
-    if (millis() - lastSwitch > weatherDuration) {
+    if (millis() - lastSwitch > clockDuration) {
       advanceDisplayMode();
     }
   }

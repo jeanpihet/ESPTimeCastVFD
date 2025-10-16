@@ -543,6 +543,14 @@ textarea::placeholder {
         </label>
 
         <label style="display: flex; align-items: center; margin-top: 1.75rem; justify-content: space-between;">
+          <span style="margin-right: 0.5em;">Show Wind Speed:</span>
+          <span class="toggle-switch">
+            <input type="checkbox" id="showWindSpeed" name="showWindSpeed" onchange="setShowWindSpeed(this.checked)">
+            <span class="toggle-slider"></span>
+          </span>
+        </label>
+
+        <label style="display: flex; align-items: center; margin-top: 1.75rem; justify-content: space-between;">
           <span style="margin-right: 0.5em;">Show Weather Description:</span>
           <span class="toggle-switch">
             <input type="checkbox" id="showWeatherDescription" name="showWeatherDescription" onchange="setShowWeatherDescription(this.checked)">
@@ -707,6 +715,7 @@ window.onload = function () {
       document.getElementById('showDayOfWeek').checked = !!data.showDayOfWeek;
       document.getElementById('showDate').checked = !!data.showDate;
       document.getElementById('showHumidity').checked = !!data.showHumidity;
+      document.getElementById('showWindSpeed').checked = !!data.showWindSpeed;
       document.getElementById('colonBlinkEnabled').checked = !!data.colonBlinkEnabled;
       document.getElementById('showWeatherDescription').checked = !!data.showWeatherDescription;
       // Dimming controls
@@ -856,6 +865,7 @@ async function submitConfig(event) {
   formData.set('showDayOfWeek', document.getElementById('showDayOfWeek').checked ? 'on' : '');
   formData.set('showDate', document.getElementById('showDate').checked ? 'on' : '');
   formData.set('showHumidity', document.getElementById('showHumidity').checked ? 'on' : '');
+  formData.set('showWindSpeed', document.getElementById('showWindSpeed').checked ? 'on' : '');
   formData.set('colonBlinkEnabled', document.getElementById('colonBlinkEnabled').checked ? 'on' : '');
 
   //dimming
@@ -1176,6 +1186,14 @@ function setColonBlink(val) {
 
 function setShowHumidity(val) {
   fetch('/set_humidity', {
+    method: 'POST',
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "value=" + (val ? 1 : 0)
+  });
+}
+
+function setShowWindSpeed(val) {
+  fetch('/set_windspeed', {
     method: 'POST',
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: "value=" + (val ? 1 : 0)
