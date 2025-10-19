@@ -1397,8 +1397,11 @@ void fetchWeather() {
     // Wind speed in km/h
     if (doc.containsKey(F("wind")) && doc[F("wind")].containsKey(F("speed"))) {
       float temp = doc[F("wind")][F("speed")];
+      if (strcmp(weatherUnits, "imperial") == 0)
+        temp *= 2.237f;
+      else
+        temp *= 3.6f;
       currentWindSpeed = (int)round(temp);
-      currentWindSpeed *= 3.6f;
     } else {
       currentWindSpeed = -1;
     }
@@ -1406,13 +1409,19 @@ void fetchWeather() {
     // Wind gusts in km/h
     if (doc.containsKey(F("wind")) && doc[F("wind")].containsKey(F("gust"))) {
       float temp = doc[F("wind")][F("gust")];
+      if (strcmp(weatherUnits, "imperial") == 0)
+        temp *= 2.237f;
+      else
+        temp *= 3.6f;
       currentWindGust = (int)round(temp);
-      currentWindGust *= 3.6f;
     } else {
       currentWindGust = -1;
     }
 
-    Serial.printf("[WEATHER] Wind speed: %d-%d km/h\n", currentWindSpeed, currentWindGust);
+    if (strcmp(weatherUnits, "imperial") == 0)
+      Serial.printf("[WEATHER] Wind speed: %d-%d mh\n", currentWindSpeed, currentWindGust);
+    else
+      Serial.printf("[WEATHER] Wind speed: %d-%d kh\n", currentWindSpeed, currentWindGust);
   } else {
     Serial.printf("[WEATHER] HTTP GET failed, error code: %d, reason: %s\n", httpCode, http.errorToString(httpCode).c_str());
     weatherAvailable = false;
@@ -2077,9 +2086,13 @@ void loop() {
         weatherDisplay = String(cappedHumidity) + "% ";
       }
 
-      // Wind speed 'speed-gust km/h'
+      // Wind speed 'speed-gust [unit: mph or km/h]'
       if (showWindSpeed && (currentWindSpeed != -1 || currentWindGust != -1)) {
-        weatherDisplay += String(currentWindSpeed) + "-" + String(currentWindGust) + "k/h ";
+        weatherDisplay += String(currentWindSpeed) + "-" + String(currentWindGust);
+        if (strcmp(weatherUnits, "imperial") == 0)
+          weatherDisplay += "mh ";
+        else
+          weatherDisplay += "kh ";
       }
 
       // Temperature
@@ -2617,4 +2630,6 @@ void loop() {
   }
 
   yield();
+
+  delay(20);
 }
