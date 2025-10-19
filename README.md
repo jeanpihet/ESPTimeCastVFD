@@ -1,46 +1,47 @@
 ![ESPTimeCast](assets/logo.svg)
 
-![GitHub stars](https://img.shields.io/github/stars/mfactory-osaka/ESPTimeCast?style=social)
-![GitHub forks](https://img.shields.io/github/forks/mfactory-osaka/ESPTimeCast?style=social)
-![Last Commit](https://img.shields.io/github/last-commit/mfactory-osaka/ESPTimeCast)
+**ESPTimeCast** is featured on:
 [![Hackaday](https://img.shields.io/badge/Featured%20on-Hackaday-black?logo=hackaday&logoColor=white)](https://hackaday.com/2025/10/02/building-a-desk-display-for-time-and-weather-data)
 [![XDA Developers](https://img.shields.io/badge/Featured%20on-XDA%20Developers-blueviolet?logo=android&logoColor=white)](https://www.xda-developers.com/super-sleek-esp32-weather-station)
 
 
-**ESPTimeCast** is a WiFi-connected LED matrix clock and weather station based on ESP8266/ESP32 and MAX7219.  
-It displays the current time, day of the week, and local weather (temp/humidity/weather description) fetched from OpenWeatherMap.  
+**ESPTimeCastVFD** is a WiFi-connected LED matrix clock and weather station based on ESP32 and PT6302 controler for VFD (Vacuum Fluorescent Display).
+It displays the current time, day of the week, and local weather (temp/humidity/wind/weather description) fetched from OpenWeatherMap.  
 Setup and configuration are fully managed via a built-in web interface.  
 
+The VFD display is from a Belgacom (ISP in Belgium) TV Box v4, which is now obsolete but it features an interesting front panel and display.
 
-<video src="https://github.com/user-attachments/assets/78b6525d-8dcd-43fc-875e-28805e0f4fab"></video>
+<img src="assets/clock_vfd_front.jpg" alt="VFD Clock front" width="800" />
+<img src="assets/clock_vfd_back.jpg" alt="VFD Clock front" width="800" />
 
-## 📦 3D Printable Case
+The VFD display has various icons, 2 7-segments digits for date and time and 12 alphanumeric characters for the display of date, weather etc.
 
-Want to give your ESPTimeCast a home? You can 3D print a custom case for it!  
-A styilish version (V2) of the case has just been released!   
-The case front panel (3mm) can be laser cut!
+There is code available to test all the segments on the VFD.
 
-<img src="assets/image01.png" alt="3D Printable Case V1" width="320" />
-<img src="assets/image02.png" alt="3D Printable Case V2" width="320" />
+Video:
 
-[![Printables Downloads](https://img.shields.io/badge/Printables-207%20Downloads-orange?logo=prusa)](https://www.printables.com/model/1344276-esptimecast-wi-fi-clock-weather-display)
-[![Cults3D Downloads](https://img.shields.io/badge/Cults3D-82%20Downloads-blue?logo=cults3d)](https://cults3d.com/en/3d-model/gadget/wifi-connected-led-matrix-clock-and-weather-station-esp8266-and-max7219)
+[![Watch the video](https://img.youtube.com/vi/aGmEJsrTPH8/0.jpg)](https://www.youtube.com/watch?v=aGmEJsrTPH8)
 
----
 
-## 📰 Press Mentions
+## Mentions
 
-ESPTimeCast has been featured on:  
-- [Hackaday](https://hackaday.com/2025/10/02/building-a-desk-display-for-time-and-weather-data)  
-- [XDA Developers](https://www.xda-developers.com/super-sleek-esp32-weather-station)  
+ESPTimeCastVFD is a fork from [ESPTimeCast](https://github.com/mfactory-osaka/ESPTimeCast), with the following changes:
+- Conversion to VSCode and PlatformIO,
+- ESP32 code only. It is easy enough to configure a different board from PlatformIO,
+- Board in use is ESP32 WROOM-32,
+- use the VFD display with scrolling,
+- add wind data from weather,
+- minor corrections in the UI for timings, scrolling etc.
+
+PT6302 is from https://github.com/the-real-mcarn/PT6302, with changes for scrolling etc.
 
 
 ## ✨ Features
 
-- **LED Matrix Display (8x32)** powered by MAX7219, with custom font support
+- **Belgacom TV Box v4 VFD** powered by PT6302, with integrated font
 - **Simple Web Interface** for all configuration (WiFi, weather, time zone, display durations, and more)
 - **Automatic NTP Sync** with robust status feedback and retries
-- **Weather Fetching** from OpenWeatherMap (every 5 minutes, temp/humidity/description)
+- **Weather Fetching** from OpenWeatherMap (every 5 minutes, temp/humidity/wind/description)
 - **Fallback AP Mode** for easy first-time setup or configuration
 - **Timezone Selection** from IANA names (DST integrated on backend)
 - **Get My Location** button to get your approximate Lat/Long.
@@ -55,8 +56,8 @@ ESPTimeCast has been featured on:
   - **24/12h clock mode** toggle (24-hour default)
   - **Imperial Units (°F)** toggle (metric °C defaults)
   - Show **Humidity** toggle (display Humidity besides Temperature)
+  - Show **Wind** toggle (display wind speed and gust besides Temperature)
   - **Weather description** toggle (displays: heavy rain, scattered clouds, thunderstorm etc.)
-  - **Flip display** (180 degrees)
   - Adjustable display **brightness**
   - Dimming Hours **Scheduling**
   - **Countdown** function (Scroll / Dramatic)
@@ -66,47 +67,38 @@ ESPTimeCast has been featured on:
 
 ## 🪛 Wiring
 
+The orignal front panel and VFD display is modified to be powered and controled from the ESP32.
+
+Changes required:
+- **Power** +5V and GND to the panel, plus wiring,
+- Keep the original controler (ATMEGA88) in **reset** (GND on pin 29 RSTB),
+- Connect the **SPI lines**,
+- A 74LS125N (from 1978, S'il vous plait!) is used as a level shifter 3.3V → 5V.
 
 
-**Power Supply Change** Switching from 3.3V to 5V for Display
+**Wiring: WROOM32 (38 pins) → 74LS125 → panel PT6302**
 
- Note: although the pins are labeled differently in the V4 and the S2, the positions are the same as the V3.x
+| Name | Wroom-32 | 74LS125N | Panel |
+|:------:|:------:|:------:|:------:|
+| CLKB | 0 | 5 → 6 | ATMEGA 17, PT6302 54 |
+| RSTB | 4 | 2 → X | ATMEGA 29 = GND, PT6302 48 has its own RC reset |
+| CSB | 2 | 12 → 11 | Q10 C, PT6302 53 |
+| DIN | 15 | 9 → 8 | ATMEGA 15, PT6302 55 |
+| 5V | 5V | 14 | Connector, C+ |
 
-**Wemos D1 Mini (ESP8266) → MAX7219**  
-**Wemos S2 Mini (ESP32) → MAX7219**
 
-| Wemos D1 Mini (v3.x) | Wemos D1 Mini (v4.0) | Wemos S2 Mini | MAX7219 |
-|:------:|:------:|:------:|:------|
-|  GND  |  GND  |  GND  |   GND  |
-|  D6   |  12  |  9  |   CLK  |
-|  D7   |  13  |  11  |   CS   |
-|  D8   |  15  |  12  |   DIN  |
-|  5V  |  5V  |  5V  |   VCC  | 
+Schematics:
 
-<img src="assets/wiring2.png" alt="Wiring" width="800" />
+<img src="assets/ESP32_VFD_bb.png" alt="Wiring Fritzing" width="800" />
 
-**Important hardware update:**  
-After observing overheating issues and unstable behavior when powering the MAX7219 matrix from the Mini D1’s 3.3V pin, we’re officially switching to powering the display via the 5V USB rail instead.  
+Full view of the connections:
 
-**What’s changing:**
-- Before: Display VCC was connected to 3.3V pin on the ESP board.
-- Now: Display VCC will be connected to the board’s 5V pin (which comes directly from USB power).
-  
-**Why this change is needed:**
-- The MAX7219 LED matrix is designed for 5V operation.  
-- The onboard 3.3V regulator (usually an AMS1117) on the Mini D1 is very limited in current output (~800mA max, often much less in practice).  
-- High-brightness matrix modules — especially green/yellow displays — can draw enough current to overload the regulator, causing:
-  - Overheating
-  - Voltage drop
-  - Complete regulator failure (some users reported only 2.4V output after damage)
+<img src="assets/wiring_full.jpg" alt="Wiring full" width="800" />
 
-**Benefits of using 5V:**
-- Higher brightness and more stable matrix performance
-- Reduced heat load on the ESP8266 board
-- Avoid long-term damage to the onboard regulator
-- The MAX7219 works fine with 3.3V logic signals from the ESP (no need for level shifters)
+Detailed view on the connections:
 
-Note: Thanks to @Wood578Guy for the info on V4
+<img src="assets/vfd_wiring_details.png" alt="Wiring full" width="800" />
+
 
 ---
 
@@ -134,8 +126,9 @@ The built-in web interface provides full configuration for:
 *External links and the "Get My Location" button require internet access.  
 They won't work while the device is in AP Mode - connect to Wi-Fi first.
 
-### UI Example:
-<img src="assets/webui6.png" alt="Web Interface" width="320">
+### UI Examples:
+<img src="assets/webui1.jpg" alt="Web Interface" width="320">
+<img src="assets/webui2.jpg" alt="Web Interface" height="600">
 
 ---
 
@@ -153,6 +146,7 @@ Click the **cog icon** next to “Advanced Settings” in the web UI to reveal e
 - **24/12h Clock**: Switch between 24-hour and 12-hour time formats (24-hour default)
 - **Imperial Units (°F)** toggle (metric °C defaults)
 - **Humidity**: Display Humidity besides Temperature
+- **Wind**: Display Wind besides Temperature
 - **Weather description** toggle (display weather description in the selected language* for 3 seconds or scrolls once if description is too long)
 - **Flip Display**: Invert the display vertically/horizontally
 - **Brightness**: Off - 0 (dim) to 15 (bright)
@@ -181,28 +175,7 @@ Tip: Don't forget to press the save button to keep your settings
 
 ## 🚀 Getting Started
 
-This guide will walk you through setting up your environment and uploading the **ESPTimeCast** project to your **ESP8266** or **ESP32** board. Please follow the instructions carefully for your specific board type.
-
----
-
-### ⚙️ ESP8266 Setup
-
-Follow these steps to prepare your Arduino IDE for ESP8266 development:
-
-1.  **Install ESP8266 Board Package:**
-    * Open `File > Preferences` in Arduino IDE.
-    * Add `http://arduino.esp8266.com/stable/package_esp8266com_index.json` to "Additional Boards Manager URLs."
-    * Go to `Tools > Board > Boards Manager...`. Search for `esp8266` by `ESP8266 Community` and click "Install".
-2.  **Select Your Board:**
-    * Go to `Tools > Board` and select your specific board, e.g., **Wemos D1 Mini** (or your ESP8266 variant).
-3.  **Configure Flash Size:**
-    * Under `Tools`, select `Flash Size "4MB FS:2MB OTA:~1019KB"`. This ensures enough space for the sketch and LittleFS data.
-4.  **Install Libraries:**
-    * Go to `Sketch > Include Library > Manage Libraries...` and install the following:
-        * `ArduinoJson` by Benoit Blanchon
-        * `MD_Parola` by majicDesigns (this will typically also install its dependency: `MD_MAX72xx`)
-        * `ESPAsyncTCP` by ESP32Async
-        * `ESPAsyncWebServer` by ESP32Async
+This guide will walk you through setting up your environment and uploading the **ESPTimeCast** project to your **ESP32** board. Please follow the instructions carefully for your specific board type.
 
 ---
 
@@ -213,14 +186,12 @@ Follow these steps to prepare your Arduino IDE for ESP32 development:
 1.  **Install ESP32 Board Package:**
     * Go to `Tools > Board > Boards Manager...`. Search for `esp32` by `Espressif Systems` and click "Install".
 2.  **Select Your Board:**
-    * Go to `Tools > Board` and select your specific board, e.g., **LOLIN S2 Mini** (or your ESP32 variant).
+    * Go to `Tools > Board` and select your specific board, e.g., **upesy_wroom** (or your ESP32 variant).
 3.  **Configure Partition Scheme:**
     * Under `Tools`, select `Partition Scheme "Default 4MB with spiffs"`. This ensures enough space for the sketch and LittleFS data.
 4.  **Install Libraries:**
     * Go to `Sketch > Include Library > Manage Libraries...` and install the following:
         * `ArduinoJson` by Benoit Blanchon
-        * `MD_Parola` by majicDesigns (this will typically also install its dependency: `MD_MAX72xx`)
-        * `AsyncTCP` by ESP32Async
         * `ESPAsyncWebServer` by ESP32Async
 
 ---
@@ -229,18 +200,13 @@ Follow these steps to prepare your Arduino IDE for ESP32 development:
 
 Once your Arduino IDE is set up for your board (as described above):
 
-1.  **Open the Project Folder:**
-    * For ESP8266: Navigate to and open the `ESPTimceCast_ESP8266` project folder. Inside, you'll find the main sketch file, typically named `ESPTimceCast_ESP8266.ino`. Open this `.ino` file in the Arduino IDE.
-    * For ESP32: Navigate to and open the `ESPTimceCast_ESP32` project folder. Inside, you'll find the main sketch file, typically named `ESPTimceCast_ESP32.ino`. Open this `.ino` file in the Arduino IDE.
-2. **Upload the Sketch:**
-    * With the main sketch file open, click the "Upload" button (the right arrow icon) in the Arduino IDE toolbar. This will compile the entire project and upload it to your board.
+1.  **Open the Project workspace**
+    * Navigate to and open `esp32_wroom_vfd_clock.code-workspace`, which opens the VSCode project.
+2.  **Compile and Upload the formware**
+    * Click 'PlatformIO: Upload'. This will compile the entire project and upload it to your board.
 3.  **Upload `/data` folder (LittleFS):**
-    * This project uses LittleFS for storing web interface files and other assets. You'll need the LittleFS Uploader plugin.
-    * [**Install the LittleFS Uploader Plugin**](https://randomnerdtutorials.com/arduino-ide-2-install-esp8266-littlefs/) 
-    * **Before uploading, ensure the Serial Monitor is closed.**
-    * Open the Command Palette (`Ctrl+Shift+P` on Windows, `Cmd+Shift+P` on macOS).
-    * Search for and run: `Upload Little FS to Pico/ESP8266/ESP32` (the exact command name might vary).
-    * **Important for ESP32:** If the upload fails, you might need to manually put your ESP32 into "Download Mode." While holding down the **Boot button** (often labeled 'BOOT' or 'IO0' or 'IO9'), briefly press and release the **RST button**, then release the Boot button.
+    * This project uses LittleFS for storing web interface files and other assets.
+    * In `PlatformIO`, click `Upload Filesystem Image`. This generates and uploads the FS to the board.
 
 ---
 
@@ -279,12 +245,9 @@ The following table summarizes what will appear on the display in each scenario:
 
 ---
 
-## ☕ Support this project
+## ☕ Development work
 
-If you enjoy this project, please consider supporting my work:
-
-[![Donate via PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg?logo=paypal)](https://www.paypal.me/officialuphoto)
-[![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-fafbfc?logo=github&logoColor=ea4aaa)](https://github.com/sponsors/mfactory-osaka) 
+- Linux porting, device drivers and firmware by [**NewOldBits.com**](https://www.newoldbits.com)
 
 
 
