@@ -33,7 +33,7 @@ ESPTimeCastVFD is a fork from [ESPTimeCast](https://github.com/mfactory-osaka/ES
 - add wind data from weather,
 - minor corrections in the UI for timings, scrolling etc.
 
-PT6302 is from https://github.com/the-real-mcarn/PT6302, with changes for scrolling etc.
+PT6302 driver code is from https://github.com/the-real-mcarn/PT6302, with changes for scrolling etc.
 
 
 ## ✨ Features
@@ -84,7 +84,8 @@ Changes required:
 | RSTB | 4 | 2 → X | ATMEGA 29 = GND, PT6302 48 has its own RC reset |
 | CSB | 2 | 12 → 11 | Q10 C, PT6302 53 |
 | DIN | 15 | 9 → 8 | ATMEGA 15, PT6302 55 |
-| 5V | 5V | 14 | Connector, C+ |
+| 5V | 5V | 14 | Connector+, C+ |
+| GND | GND | 7 | Connector- |
 
 
 Schematics:
@@ -148,7 +149,7 @@ Click the **cog icon** next to “Advanced Settings” in the web UI to reveal e
 - **Humidity**: Display Humidity besides Temperature
 - **Wind**: Display Wind besides Temperature
 - **Weather description** toggle (display weather description in the selected language* for 3 seconds or scrolls once if description is too long)
-- **Flip Display**: Invert the display vertically/horizontally
+- **Flip Display**: Invert the display vertically/horizontally - No effect on VFD
 - **Brightness**: Off - 0 (dim) to 15 (bright)
 - **Dimming Feature**: Start time, end time and desired brightness selection
 - **Countdown** function, set a countdown to your favorit/next event, 2 modes: Scroll/Dramatic! 
@@ -181,16 +182,18 @@ This guide will walk you through setting up your environment and uploading the *
 
 ### ⚙️ ESP32 Setup
 
-Follow these steps to prepare your Arduino IDE for ESP32 development:
+The project is fully configured and ready to use.
+
+In case of a specific board and settings, follow these steps.
 
 1.  **Install ESP32 Board Package:**
-    * Go to `Tools > Board > Boards Manager...`. Search for `esp32` by `Espressif Systems` and click "Install".
+    * Go to `PlatformIO > Board Explorer`. Search for `esp32` by `Espressif Systems`, select 'uPesy ESP32 Wroom DevKit' and click "Install".
 2.  **Select Your Board:**
-    * Go to `Tools > Board` and select your specific board, e.g., **upesy_wroom** (or your ESP32 variant).
+    * Go to `PlartformIO > Projects`, select your project and select your specific board, e.g., **upesy_wroom** (or your ESP32 variant).
 3.  **Configure Partition Scheme:**
-    * Under `Tools`, select `Partition Scheme "Default 4MB with spiffs"`. This ensures enough space for the sketch and LittleFS data.
+    * The LittleFS configuration to use is defined in `platformio.ini`.
 4.  **Install Libraries:**
-    * Go to `Sketch > Include Library > Manage Libraries...` and install the following:
+    * Go to `PlartformIO > Projects`, select your project and install the following under `Library Options`:
         * `ArduinoJson` by Benoit Blanchon
         * `ESPAsyncWebServer` by ESP32Async
 
