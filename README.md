@@ -5,7 +5,7 @@
 [![XDA Developers](https://img.shields.io/badge/Featured%20on-XDA%20Developers-blueviolet?logo=android&logoColor=white)](https://www.xda-developers.com/super-sleek-esp32-weather-station)
 
 
-**ESPTimeCastVFD** is a WiFi-connected LED matrix clock and weather station based on ESP32 and PT6302 controler for VFD (Vacuum Fluorescent Display).
+**ESPTimeCastVFD** is a WiFi-connected LED matrix clock and weather station based on ESP32 and PT6302 controller for VFD (Vacuum Fluorescent Display).
 It displays the current time, day of the week, and local weather (temp/humidity/wind/weather description) fetched from OpenWeatherMap.  
 Setup and configuration are fully managed via a built-in web interface.  
 
@@ -16,7 +16,8 @@ The VFD display is from a Belgacom (ISP in Belgium) TV Box v4, which is now obso
 
 The VFD display has various icons, 2 7-segments digits for date and time and 12 alphanumeric characters for the display of date, weather etc.
 
-There is code available to test all the segments on the VFD.
+After hacking the HW and some investigation on the mapping of the segments and buffers, the VFD can be fully used. There even is code available to test/experiment all the segments on the VFD, cf. `display::test_digits`.
+
 
 Video:
 
@@ -67,11 +68,11 @@ PT6302 driver code is from https://github.com/the-real-mcarn/PT6302, with change
 
 ## 🪛 Wiring
 
-The orignal front panel and VFD display is modified to be powered and controled from the ESP32.
+The orignal front panel and VFD display is modified to be powered and controlled from the ESP32.
 
 Changes required:
 - **Power** +5V and GND to the panel, plus wiring,
-- Keep the original controler (ATMEGA88) in **reset** (GND on pin 29 RSTB),
+- Keep the original controller (ATMEGA88) in **reset** (GND on pin 29 RSTB),
 - Connect the **SPI lines**,
 - A 74LS125N (from 1978, S'il vous plait!) is used as a level shifter 3.3V → 5V.
 
@@ -206,10 +207,10 @@ Once your Arduino IDE is set up for your board (as described above):
 1.  **Open the Project workspace**
     * Navigate to and open `esp32_wroom_vfd_clock.code-workspace`, which opens the VSCode project.
 2.  **Compile and Upload the formware**
-    * Click 'PlatformIO: Upload'. This will compile the entire project and upload it to your board.
+    * Click `PlatformIO: Upload`. This will compile the entire project and upload it to your board.
 3.  **Upload `/data` folder (LittleFS):**
     * This project uses LittleFS for storing web interface files and other assets.
-    * In `PlatformIO`, click `Upload Filesystem Image`. This generates and uploads the FS to the board.
+    * Click `PlatformIO: Upload Filesystem Image`. This generates and uploads the FS to the board.
 
 ---
 
