@@ -1,5 +1,9 @@
 ![ESPTimeCast](assets/logo.svg)
 
+
+**ESPTimeCastVFD** is featured on:
+[![Hackaday](https://img.shields.io/badge/Featured%20on-Hackaday-black?logo=hackaday&logoColor=white)](https://hackaday.com/2025/10/22/esp32-invades-old-tv-box-forecast-more-than-just-channels/)
+
 **ESPTimeCast** is featured on:
 [![Hackaday](https://img.shields.io/badge/Featured%20on-Hackaday-black?logo=hackaday&logoColor=white)](https://hackaday.com/2025/10/02/building-a-desk-display-for-time-and-weather-data)
 [![XDA Developers](https://img.shields.io/badge/Featured%20on-XDA%20Developers-blueviolet?logo=android&logoColor=white)](https://www.xda-developers.com/super-sleek-esp32-weather-station)
