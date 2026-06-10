@@ -376,6 +376,8 @@ void connectWiFi() {
   }
 
   WiFi.mode(WIFI_STA);
+  // Enable automatic reconnect before starting the connection
+  WiFi.setAutoReconnect(true);
   WiFi.begin(ssid, password);
   unsigned long startAttemptTime = millis();
 
@@ -1665,8 +1667,16 @@ void loop() {
   const unsigned long fetchInterval = 300000;  // 5 minutes
 
   if (!isAPMode && WiFi.status() != WL_CONNECTED) {
-    Serial.println("[WiFi] Reconnecting...");
-    WiFi.reconnect();
+    static unsigned long lastReconnectAttempt = 0;
+    const unsigned long RECONNECT_INTERVAL = 10000UL; // 10 seconds between attempts
+    if (millis() - lastReconnectAttempt > RECONNECT_INTERVAL) {
+      lastReconnectAttempt = millis();
+      Serial.println("[WiFi] Attempting reconnect...");
+      // Try a clean reconnect sequence which works reliably across ESP32 cores
+      WiFi.disconnect(false);
+      delay(50);
+      WiFi.begin(ssid, password);
+    }
   }
 
   // AP Mode animation
